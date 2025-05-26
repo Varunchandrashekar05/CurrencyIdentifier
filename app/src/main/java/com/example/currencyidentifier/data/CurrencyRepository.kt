@@ -17,8 +17,11 @@ import java.io.IOException
 open class CurrencyRepository(private val context: Context) {
 
     // Define the labels that match your model's output order
+    // ENSURE THESE MATCH THE EXACT LABELS IN YOUR model's labels.txt file!
+    // AND ALSO MATCH THE CASES IN ResultScreen.kt
     private val labels = listOf(
-        "ten", "twenty", "fifty", "hundred", "two-hundred", "five-hundred", "two-thousand"
+        "ten", "twenty", "fifty", "hundred", "two hundred", "five hundred", "two thousand", // Corrected
+        "one", "five" // Assuming you also have one and five rupee notes
     )
 
     // Define model input dimensions

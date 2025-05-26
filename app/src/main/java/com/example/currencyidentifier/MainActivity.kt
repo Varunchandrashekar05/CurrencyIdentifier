@@ -3,6 +3,9 @@ package com.example.currencyidentifier
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.speech.tts.TextToSpeech.OnInitListener
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,13 +34,12 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.isGranted
 
-// REQUIRED IMPORTS FOR THE FIX
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-// END REQUIRED IMPORTS
+import java.util.Locale // Import Locale for TTS language setting
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), OnInitListener { // Implement OnInitListener
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -45,8 +47,13 @@ class MainActivity : ComponentActivity() {
         // Handle permissions result if needed, though Accompanist handles much of it
     }
 
+    private lateinit var tts: TextToSpeech // Declare TextToSpeech object
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize TextToSpeech engine
+        tts = TextToSpeech(this, this)
 
         // Request permissions on startup
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -66,7 +73,6 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
-                    // Get an instance of CurrencyViewModel
                     val currencyViewModel: CurrencyViewModel = viewModel(
                         factory = CurrencyViewModelFactory(CurrencyRepository(applicationContext))
                     )
@@ -77,8 +83,6 @@ class MainActivity : ComponentActivity() {
                                 onCapturePhotoClick = { navController.navigate("camera") },
                                 onUploadImageClick = { bitmap ->
                                     currencyViewModel.detectCurrency(bitmap)
-                                    // This navigate is typically called from a UI interaction,
-                                    // which is already on the main thread, so no special handling needed here.
                                     navController.navigate("result")
                                 },
                                 viewModel = currencyViewModel
@@ -88,16 +92,10 @@ class MainActivity : ComponentActivity() {
                             CameraScreen(
                                 viewModel = currencyViewModel,
                                 onImageCaptured = { bitmap ->
-                                    // ****** THE FIX IS HERE ******
-                                    // The onImageCaptured lambda is executed on a background thread
-                                    // by the ImageCapture callback. Navigation and ViewModel updates
-                                    // (even with postValue, for the initial call) should ideally be
-                                    // initiated from the main thread or explicitly posted to it.
                                     lifecycleScope.launch(Dispatchers.Main) {
                                         currencyViewModel.detectCurrency(bitmap)
                                         navController.navigate("result")
                                     }
-                                    // ****** END FIX ******
                                 },
                                 onBack = { navController.popBackStack() }
                             )
@@ -107,9 +105,10 @@ class MainActivity : ComponentActivity() {
                                 viewModel = currencyViewModel,
                                 onBackToHome = {
                                     currencyViewModel.clearDetectionResult()
-                                    // This navigate is typically called from a UI interaction,
-                                    // which is already on the main thread, so no special handling needed here.
                                     navController.popBackStack("home", inclusive = false)
+                                },
+                                onSpeakText = { text -> // Pass the speakOut function
+                                    speakOut(text)
                                 }
                             )
                         }
@@ -117,5 +116,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Callback for TextToSpeech initialization
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            // Set language to US English. For Indian English or other languages,
+            // you might need to try different locales or handle missing data.
+            // Example for Indian English: tts.setLanguage(Locale("en", "IN"))
+            val result = tts.setLanguage(Locale.US)
+
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                // Inform the user if the language data is missing or not supported
+                Toast.makeText(this, "Text-to-Speech language not supported or data missing.", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            // Inform the user if TTS initialization failed
+            Toast.makeText(this, "Text-to-Speech initialization failed.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Function to speak out text
+    private fun speakOut(text: String) {
+        if (::tts.isInitialized) {
+            // Stop any ongoing speech before starting a new one
+            if (tts.isSpeaking) {
+                tts.stop()
+            }
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "")
+        }
+    }
+
+    override fun onDestroy() {
+        // Shutdown TextToSpeech engine to release resources
+        if (::tts.isInitialized) {
+            tts.stop()
+            tts.shutdown()
+        }
+        super.onDestroy()
     }
 }
